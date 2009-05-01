@@ -386,18 +386,14 @@ namespace Brunet
           }
     }
     ArrayList c_threads = new ArrayList(); 
-    var xrms_l = new List<Brunet.Rpc.XmlRpcManagerServer>();
-    int xrcnt = 0;
+    var xrmserver = new Brunet.Rpc.XmlRpcManagerServer(20000);
     foreach( Node item in rnd_list)
     {
       Thread t = new Thread( item.Connect );
       c_threads.Add(t);
       t.Start();
-      var xrms = new Brunet.Rpc.XmlRpcManagerServer(20000 + xrcnt);
-      xrcnt++;
       //Start an XML-RPC server for each node
-      xrms.Update(item);
-      xrms_l.Add(xrms);
+      xrmserver.Add(item);
       Console.WriteLine(item.Address.ToString()
 		      + " RemoteTAs count: " + item.RemoteTAs.Count);
       total_started++;
