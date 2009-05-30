@@ -228,7 +228,7 @@ namespace Brunet.Applications {
 
       if(_node_config.XmlRpcManager != null && _node_config.XmlRpcManager.Enabled) {
         if(_xrm == null) {
-          _xrm = new SingleXmlRpcManagerServer(_node_config.XmlRpcManager.Port);
+          _xrm = new XmlRpcManagerServer(_node_config.XmlRpcManager.Port);
         }
         _xrm.Add(_node);
       }
@@ -245,7 +245,7 @@ namespace Brunet.Applications {
         _ds.Stop();
       }
       if(_xrm != null) {
-        _xrm.Suspend();
+        _xrm.Remove(_node);
       }
     }
 
