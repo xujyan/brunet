@@ -414,8 +414,13 @@ namespace Brunet.Rpc {
   /// <summary>
   /// .NET Remoting service that hosts the XmlRpcManager instances.
   /// </summary>
+  /// <remarks>
+  /// Theads safety: Instance members are not thread-safe. It's based
+  /// on the assumption that nodes are added sequentially at startup.
+  /// </remarks>
   public class XmlRpcManagerServer {
     readonly IChannel _channel;
+    readonly Dumper _dumper;
 
     /// <summary>
     /// (Node, XmlRpcManager) mapping.
@@ -444,6 +449,9 @@ namespace Brunet.Rpc {
 #endif
       _channel = new HttpChannel(props, null, chain);
       ChannelServices.RegisterChannel(_channel, false);
+
+      _dumper = new Dumper(this);
+      RemotingServices.Marshal(_dumper, "xmserver.rem");
     }
 
     /// <summary>
@@ -452,7 +460,7 @@ namespace Brunet.Rpc {
     public void Stop()
     {
       try {
-        Suspend();
+        RemoveAll();
       } catch{}
      
       try {
@@ -463,7 +471,7 @@ namespace Brunet.Rpc {
     /// <summary>
     /// Suspends the service objects.
     /// </summary>
-    public void Suspend()
+    public void RemoveAll()
     {
       foreach (var pair in _xrm_mappings) {
         RemotingServices.Disconnect(pair.Value);
@@ -503,22 +511,38 @@ namespace Brunet.Rpc {
       rpc.AddHandler("xmlrpc", xrm);
       _xrm_mappings[node] = xrm;
       RemotingServices.Marshal(xrm, uri);
+      if (_xrm_mappings.Count == 1) {
+        // Add an alias for the first node.
+        RemotingServices.Marshal(xrm, "xm.rem");
+      }
     }
-  }
 
-  /// <summary>
-  /// Hosts only one instance of XmlRpcManager thus allows access using the simple 
-  /// uri: xm.rem
-  /// </summary>
-  public class SingleXmlRpcManagerServer : XmlRpcManagerServer {
-    public SingleXmlRpcManagerServer(int port) : base(port) { }
+    /// <summary>
+    /// Responsible for dumping the list of registered nodes to XMLRPC clients.
+    /// </summary>
+    public class Dumper : MarshalByRefObject {
+      XmlRpcManagerServer _outer;
 
-    public override void Add(Node node) {
-      if (_xrm_mappings.Count > 0) {
-        throw new InvalidOperationException("Only one node can be registered.");
-      } else {
-        RpcManager rpc = RpcManager.GetInstance(node);
-        Add(node, rpc, "xm.rem");
+      internal Dumper(XmlRpcManagerServer outer) {
+        _outer = outer;
+      }
+
+      /// <summary>
+      /// Dumps a list of nodes registered with the server. The URI of a node's 
+      /// corresponding XmlRpcManager is "{address}.rem"
+      /// </summary>
+      /// <returns>The list of node addresses.</returns>
+      /// <remarks>
+      /// Thread safety: Not thread-safe. It assumes that there is no concurrent 
+      /// changes to the mapping table when this method is called.
+      /// </remarks>
+      [XmlRpcMethod]
+      public string[] Dump() {
+        var ret = new ArrayList();
+        foreach (var pair in _outer._xrm_mappings) {
+          ret.Add(pair.Key.Address.ToString());
+        }
+        return ret.ToArray(typeof(string)) as string[];
       }
     }
   }
@@ -635,8 +659,8 @@ namespace Brunet.Rpc {
       Node n = new StructuredNode(new AHAddress(new RNGCryptoServiceProvider()));
       _rpc = XmlRpcManagerClient.GetXmlRpcManager("127.0.0.1", Port, "xm.rem", true);
       _mrm = MockRpcManager.GetInstance(n);
-      _server = new SingleXmlRpcManagerServer(Port);
-      _server.Add(n, _mrm, "xm.rem");
+      _server = new XmlRpcManagerServer(Port);
+      _server.Add(n, _mrm, "xm1.rem");
       Debug.WriteLine(string.Format("Server started at {0}", Port));
     }
 
