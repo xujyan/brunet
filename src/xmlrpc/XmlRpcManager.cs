@@ -414,18 +414,15 @@ namespace Brunet.Rpc {
   /// <summary>
   /// .NET Remoting service that hosts the XmlRpcManager instances.
   /// </summary>
-  /// <remarks>
-  /// Theads safety: Instance members are not thread-safe. It's based
-  /// on the assumption that nodes are added sequentially at startup.
-  /// </remarks>
   public class XmlRpcManagerServer {
     readonly IChannel _channel;
     readonly Dumper _dumper;
+    readonly object _sync_root = new object();
 
     /// <summary>
     /// (Node, XmlRpcManager) mapping.
     /// </summary>
-    protected readonly IDictionary<Node, XmlRpcManager> _xrm_mappings = 
+    readonly IDictionary<Node, XmlRpcManager> _xrm_mappings = 
       new Dictionary<Node, XmlRpcManager>();
 
     /// <summary>
@@ -471,11 +468,13 @@ namespace Brunet.Rpc {
     /// <summary>
     /// Suspends the service objects.
     /// </summary>
-    public void RemoveAll()
-    {
-      foreach (var pair in _xrm_mappings) {
-        RemotingServices.Disconnect(pair.Value);
-        pair.Key.Rpc.RemoveHandler("xmlrpc");
+    public void RemoveAll() {
+      lock (_sync_root) {
+        foreach (var pair in _xrm_mappings) {
+          RemotingServices.Disconnect(pair.Value);
+          pair.Key.Rpc.RemoveHandler("xmlrpc");
+        }
+        _xrm_mappings.Clear();
       }
     }
 
@@ -495,8 +494,12 @@ namespace Brunet.Rpc {
     /// </summary>
     /// <param name="node">The node.</param>
     public void Remove(Node node) {
+      lock (_sync_root) {
         RemotingServices.Disconnect(_xrm_mappings[node]);
         node.Rpc.RemoveHandler("xmlrpc");
+        _xrm_mappings.Remove(node);
+        CheckAndSetDefaultManager();
+      }
     }
 
     /// <summary>
@@ -509,11 +512,25 @@ namespace Brunet.Rpc {
     internal void Add(Node node, RpcManager rpc, string uri) {
       var xrm = new XmlRpcManager(node, rpc);
       rpc.AddHandler("xmlrpc", xrm);
-      _xrm_mappings[node] = xrm;
-      RemotingServices.Marshal(xrm, uri);
-      if (_xrm_mappings.Count == 1) {
-        // Add an alias for the first node.
-        RemotingServices.Marshal(xrm, "xm.rem");
+      lock (_sync_root) {
+        _xrm_mappings[node] = xrm;
+        RemotingServices.Marshal(xrm, uri);
+        CheckAndSetDefaultManager();
+      }
+    }
+
+    /// <summary>
+    /// Checks and sets the default XmlRpcManager. Should only be called by Add 
+    /// and Remove.
+    /// </summary>
+    void CheckAndSetDefaultManager() {
+        if (_xrm_mappings.Count == 1) {
+          // Add an alias for the first node.
+          foreach(var pair in _xrm_mappings) {
+            RemotingServices.Marshal(pair.Value, "xm.rem");
+            // Since only one pair, break here.
+            break;
+          }
       }
     }
 
@@ -521,7 +538,7 @@ namespace Brunet.Rpc {
     /// Responsible for dumping the list of registered nodes to XMLRPC clients.
     /// </summary>
     public class Dumper : MarshalByRefObject {
-      XmlRpcManagerServer _outer;
+      readonly XmlRpcManagerServer _outer;
 
       internal Dumper(XmlRpcManagerServer outer) {
         _outer = outer;
@@ -532,15 +549,13 @@ namespace Brunet.Rpc {
       /// corresponding XmlRpcManager is "{address}.rem"
       /// </summary>
       /// <returns>The list of node addresses.</returns>
-      /// <remarks>
-      /// Thread safety: Not thread-safe. It assumes that there is no concurrent 
-      /// changes to the mapping table when this method is called.
-      /// </remarks>
-      [XmlRpcMethod]
+      [XmlRpcMethod("dump")]
       public string[] Dump() {
         var ret = new ArrayList();
-        foreach (var pair in _outer._xrm_mappings) {
-          ret.Add(pair.Key.Address.ToString());
+        lock (_outer._sync_root) {
+          foreach (var pair in _outer._xrm_mappings) {
+            ret.Add(pair.Key.Address.ToString());
+          }
         }
         return ret.ToArray(typeof(string)) as string[];
       }
@@ -784,6 +799,7 @@ namespace Brunet.Rpc {
       this._mrm.CurrentInvokeState.RetValues = new object[] { e };
       this._rpc.localproxy("Foo");
     }
+
   }
 #endif
 }
