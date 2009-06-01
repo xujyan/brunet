@@ -35,7 +35,7 @@ class XmlRpcManagerTestCase(unittest.TestCase):
     rpc = xmlrpclib.Server(defaultUrl)
     info = rpc.localproxy("Information.Info")
     rpc = xmlrpclib.Server(serverUrl)
-    nodeList = rpc.dump()
+    nodeList = rpc.listNodes()
     self.assertEqual(info['neighbors']['self'], nodeList[0])
     addressUrl = "http://127.0.0.1:10000/%s.rem" % nodeList[0]
     rpc = xmlrpclib.Server(addressUrl)

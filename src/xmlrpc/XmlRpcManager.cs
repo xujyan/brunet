@@ -535,7 +535,7 @@ namespace Brunet.Rpc {
     }
 
     /// <summary>
-    /// Responsible for dumping the list of registered nodes to XMLRPC clients.
+    /// Responsible for dumping server information to XML-RPC clients.
     /// </summary>
     public class Dumper : MarshalByRefObject {
       readonly XmlRpcManagerServer _outer;
@@ -549,8 +549,8 @@ namespace Brunet.Rpc {
       /// corresponding XmlRpcManager is "{address}.rem"
       /// </summary>
       /// <returns>The list of node addresses.</returns>
-      [XmlRpcMethod("dump")]
-      public string[] Dump() {
+      [XmlRpcMethod("listNodes")]
+      public string[] ListNodes() {
         var ret = new ArrayList();
         lock (_outer._sync_root) {
           foreach (var pair in _outer._xrm_mappings) {
